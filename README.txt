@@ -1,0 +1,1 @@
+This repository was created for my projects in the ABMS course. The first project I included is the Hybridization model in NetLogo.
