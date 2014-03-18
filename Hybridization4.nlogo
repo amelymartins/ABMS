@@ -2,13 +2,22 @@ breed [fragments fragment]
 breed [monkeys monkey]
 
 fragments-own [radius
+              group
               population ;;trait to calculate the population in each fragment
               maximum_density  ;;the maximum density accepted for each fragment
               ]
 monkeys-own [specie
              sex
              age
-             dispersion_status
+             interbreeding
+             mate
+             my-group
+             spfather
+             spmother
+             father
+             mother
+             my-fragment
+             AmI_dispersing?
              dispersion_power
              home-range
              affinity_sympatric
@@ -19,7 +28,56 @@ monkeys-own [specie
 
 to setup
   clear-all
-  create-fragments n-fragments [
+  reset-ticks
+  ifelse n-fragments > (n-monkeys / 10)
+  [create-turtles1]
+  [create-turtles2]
+end
+
+to go
+  ask monkeys [
+  ifelse AmI_dispersing?
+  [
+    ;;check-time-to-die
+    disperse
+    ]
+  [
+    check-time-to-die
+;   check-dispersion
+    move
+    ] ]
+  
+  ask monkeys with [(sex = "female") and (age >= 6) and (interbreeding >= 2)] [reproduce]
+      
+  ask monkeys [set age age + 1]
+  
+    ask fragments [
+    set population count monkeys in-radius radius;    set group other monkeys in-radius radius
+    set group other monkeys in-radius radius
+    ]
+  ask monkeys [
+    set my-fragment min-one-of fragments [distance myself]
+    set my-group [group] of my-fragment
+    ]
+  
+    ask monkeys with [(sex = "female") and (age <= 5)]
+    [set interbreeding interbreeding + 1]
+    
+    ask monkeys with [(sex = "female") and (age >= 6) and (interbreeding < 2)]
+    [set interbreeding interbreeding + 1]
+  if ticks >= 300 [stop]
+  tick
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;  SUBMODELS  ;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;;;;;;;;;;;;;; CREATE TURTLES 1 ;;;;;;;;;;;;;;;;
+to create-turtles1
+    let min_density (n-monkeys / 10)
+    create-fragments min_density [
     set color green
     set size 1        ;; the biggest fragment knew for the species has 15Km2, thus I'm setting a random value for the area from 5Km2 to 15Km2 for each fragment 
     set shape "circle"
@@ -29,55 +87,284 @@ to setup
     set maximum_density ((1 + (count (patches in-radius radius))) * (11 + random 22)) ;; calculating the maximum density for each patch considering the min and max
                                                                                 ;;density values reported for the species (11 and 33ind/Km2 respectivelly)
                                                                                 ;;I'm adding 1 to count the patch where the fragment agent is in it
-    if  maximum_density > 200 [set maximum_density 200]
+    if  maximum_density > 180 [set maximum_density 180]
     ]
-  create-monkeys n-monkeys [  ;;calculating the number of adults considering the proportion of 1:1.4 (adults:juveniles)
+    
+    create-monkeys n-monkeys [  ;;calculating the number of adults considering the proportion of 1:1.4 (adults:juveniles)
     set shape "monkey2"
     set size 2
-    move-to one-of fragments 
+    set AmI_dispersing? false
+    set interbreeding 0
+    set father "F1"
+    set mother "F1"
+    set mate nobody
+    move-to one-of fragments ;with [population < maximum_density]
 while [any? monkeys in-radius radius = false] [  ;; avoid create agents alone in one fragment
   if (any? monkeys in-radius radius = false) [
-    move-to one-of fragments
+    move-to one-of fragments ;with [population < maximum_density]
     ]
   ]
 
 while [(xcor < 135) and (xcor > 95)] [ ;;maintaining some fragments in the middle of the distribution of the two species without monkeys 
   if (xcor < 135) and (xcor > 95)
-  [move-to one-of fragments with [any? monkeys = true] ]
+  [move-to one-of fragments with [any? monkeys = true] ]  ;; and (population < maximum_density)
 ]
+
+  ask fragments [
+    while [population > maximum_density] [
+    set population count monkeys in-radius radius
+    set group other monkeys in-radius radius
+    if population > maximum_density [ask one-of monkeys in-radius radius [move-to one-of fragments with [(any? monkeys = true) and (population < maximum_density)]]]
+     ] ]
         
     ifelse xcor >  115 [ ;; creating the two different species, with different color and separated vertically in the world
-      set specie 1
+      set specie 0
       set color yellow
       ] [
-      set specie 2
+      set specie 1
       set color brown
       ]
-    let min_age 7
+    let min_age 6
     ask fragments [  ;;creating groups of primates in each fragment
       ask monkeys in-radius radius [
         ifelse random-float 1.0 < 0.6  ;; creating adults and females in the proportion of 1:1.5
     [set sex "female"]
     [set sex "male" ]
     ifelse random-float 1.0 < 0.58 ;; creating adults and juveniles in the proportion of 1:1.4
-    [set age random 7]
-    [set age min_age + random 13 ]  ;; age of adults is created considering the estimated age of sexual maturity (7 years) and the last reprodutive age (20 years)
+    [set age random 6]
+    [set age min_age + random 10 ]  ;; age of adults is created considering the estimated age of sexual maturity (7 years) and the last reprodutive age (20 years)
         set xcor xcor + random radius
         set ycor ycor + random radius
         ]
       ]
   ]
-  ask fragments [set population count monkeys in-radius radius]
+  ask fragments [
+    set population count monkeys in-radius radius
+    set group other monkeys in-radius radius
+    ]
+  ask monkeys [
+    set my-fragment min-one-of fragments [distance myself]
+    set my-group [group] of my-fragment
+    ]
+  
+  ask monkeys with [(sex = "female") and (age >= 5)] [set interbreeding 2]
+  
+  create-fragments abs (n-fragments - min_density) [
+    set color green
+    set size 1        ;; the biggest fragment knew for the species has 15Km2, thus I'm setting a random value for the area from 5Km2 to 15Km2 for each fragment 
+    set shape "circle"
+    set radius random 5
+    setxy random-xcor random-ycor
+    ask patches in-radius radius [set pcolor green]
+    set maximum_density ((1 + (count (patches in-radius radius))) * (11 + random 22)) ;; calculating the maximum density for each patch considering the min and max
+                                                                                ;;density values reported for the species (11 and 33ind/Km2 respectivelly)
+                                                                                ;;I'm adding 1 to count the patch where the fragment agent is in it
+    if  maximum_density > 180 [set maximum_density 180]
+    ]
+end 
+
+
+;;;;;;;;;;;;;;;; CREATE TURTLES 2 ;;;;;;;;;;;;;;;;
+to create-turtles2
+    create-fragments n-fragments [
+    set color green
+    set size 1        ;; the biggest fragment knew for the species has 15Km2, thus I'm setting a random value for the area from 5Km2 to 15Km2 for each fragment 
+    set shape "circle"
+    set radius random 5
+    setxy random-xcor random-ycor
+    ask patches in-radius radius [set pcolor green]
+    set maximum_density ((1 + (count (patches in-radius radius))) * (11 + random 22)) ;; calculating the maximum density for each patch considering the min and max
+                                                                                ;;density values reported for the species (11 and 33ind/Km2 respectivelly)
+                                                                                ;;I'm adding 1 to count the patch where the fragment agent is in it
+    if  maximum_density > 180 [set maximum_density 180]
+    ]
+    
+    create-monkeys n-monkeys [  ;;calculating the number of adults considering the proportion of 1:1.4 (adults:juveniles)
+    set shape "monkey2"
+    set size 2
+    set AmI_dispersing? false
+    set interbreeding 0
+    set father "F1"
+    set mother "F1"
+    set mate nobody
+    move-to one-of fragments ;;with [population < maximum_density]
+while [any? monkeys in-radius radius = false] [  ;; avoid create agents alone in one fragment
+  if (any? monkeys in-radius radius = false) [
+    move-to one-of fragments ;;with [population < maximum_density]
+    ]
+  ]
+
+while [(xcor < 135) and (xcor > 95)] [ ;;maintaining some fragments in the middle of the distribution of the two species without monkeys 
+  if (xcor < 135) and (xcor > 95)
+  [move-to one-of fragments with [any? monkeys = true] ]  ;;and population < maximum_density
+]
+
+
+  ask fragments [
+    while [population > maximum_density] [
+    set population count monkeys in-radius radius
+    set group other monkeys in-radius radius
+    if population > maximum_density [ask one-of monkeys in-radius radius [move-to one-of fragments with [(any? monkeys = true) and (population < maximum_density)]]]
+     ] ]
+        
+    ifelse xcor >  115 [ ;; creating the two different species, with different color and separated vertically in the world
+      set specie 0
+      set color yellow
+      ] [
+      set specie 1
+      set color brown
+      ]
+    let min_age 6
+    ask fragments [  ;;creating groups of primates in each fragment
+      ask monkeys in-radius radius [
+        ifelse random-float 1.0 < 0.6  ;; creating adults and females in the proportion of 1:1.5
+    [set sex "female"]
+    [set sex "male" ]
+    ifelse random-float 1.0 < 0.58 ;; creating adults and juveniles in the proportion of 1:1.4
+    [set age random 6]
+    [set age min_age + random 10 ]  ;; age of adults is created considering the estimated age of sexual maturity (7 years) and the last reprodutive age (20 years)
+        set xcor xcor + random radius
+        set ycor ycor + random radius
+        ]
+      ]
+  ]
+    ask fragments [
+      set population count monkeys in-radius radius
+      set group other monkeys in-radius radius
+      ]
+    ask monkeys [
+    set my-fragment min-one-of fragments [distance myself]
+    set my-group [group] of my-fragment
+    ]
+    
+    ask monkeys with [(sex = "female") and (age >= 5)] [set interbreeding 2]
 end
 
-to go
-  
+;;;;;;;;; DISPERSE ;;;;;;;;;;;;
+to disperse
+;    ask fragments [
+;    set population count monkeys in-radius radius
+;    set group other monkeys in-radius radius
+;    ]
+;  ask monkeys [
+;    set my-fragment min-one-of fragments [distance myself]
+;    set group [group] of my-fragment
+;    ]
 end
+
+
+;;;;;;;;; REPRODUCE ;;;;;;;;;;;;
+to reproduce
+    if ([population] of my-fragment) <= ([maximum_density] of my-fragment) [
+   
+      ;;;;;;;;;;;;;;;;;
+       ifelse pref-same-sp = "Yes"      ;; if yes - the females will reproduce with males from diff. species only if there is any male from her species
+    [
+      let g one-of my-group with [(sex = "male") and (age >= 6) and (specie = [specie] of self)]
+      ifelse g !=  nobody
+      [set mate one-of my-group with [(sex = "male") and (age >= 6) and (specie = [specie] of self)]
+       breeding]
+      [if random-float 1.0 < prob-mate-diff-sp [
+          set mate one-of my-group with [(sex = "male") and (age >= 6)]
+          breeding
+          ]]
+      ]
+    [set mate one-of my-group with [(sex = "male") and (age >= 6)]
+     breeding] 
+      ;;;;;;;;;;;;;;;;;;
+      ]
+    
+end
+
+;;;;;;;;;;;;;;;; BREEDING ;;;;;;;;;;;;;;;;;;
+to breeding
+  ifelse mate != nobody [
+   let m [who] of self
+   let f [who] of mate
+   let spm [specie] of monkey m
+   let spf [specie] of monkey f
+   
+   hatch 1 [
+    set age 0
+    set AmI_dispersing? false
+    set interbreeding 0
+    set mate nobody
+    set spfather spf   ;; specie value of the father
+    set spmother spm   ;; specie value of the mother
+    set father f       ;; ID of the father
+    set mother m       ;; ID of the mother
+    set specie ((spf + spm) / 2)   
+    set my-group [my-group] of monkey f
+    set my-fragment [my-fragment] of monkey f
+    set xcor [xcor] of monkey f
+    set ycor [ycor] of monkey f
+    ifelse random-float 1.0 < 0.5
+    [set sex "female"]
+    [set sex "male"]
+    
+    ifelse specie = 0
+    [set color yellow]
+    [ifelse specie = 1
+      [set color brown]
+      [set color orange]
+      ]
+   ]
+   set interbreeding 0 ] 
+ 
+ [set interbreeding interbreeding + 1]
+ 
+end
+
+
+;;;;;;;;; MOVE ;;;;;;;;;;;;
+to move
+  if any? patches in-radius 3 with [pcolor = green] [
+  move-to one-of patches in-radius 3 with [pcolor = green] ]
+end
+
+
+;;;;;;;;;;;;;; CHECK TIME TO DIE ;;;;;;;;;;;;;;;;;;
+to check-time-to-die     ;; Using annual mortality rates (Montenegro 2011)
+  if (age >= 20) [die]             ;; individuals die in the last reproductive age estimated to the species 
+ 
+  ifelse age <= 1        ;; Mortality rate for infants which have less than 1 year (20%)
+  [if random-float 1.0 < 0.2 [die] ]
+  [
+    ifelse age <= 6      ;; Mortality rate for individuals which have more than 1 and less than 6 years (8%)
+    [if random-float 1.0 < 0.08 [die] ]
+    [if random-float 1.0 < 0.05  [die] ]  ;; Mortality rate for individuals which have more than 6 years (5%)
+    ]
+end
+
+;;;;;;;;;;;CHECK FOR DISPERSION
+to check-dispersion      ;;Target induviduals as dispersing or not
+;  ask fragments [
+;   ifelse population >= maximum_density   ;;The probability of dispersing is bigger when the population of the fragment reach the maximum-density 
+;   [
+;     ask monkeys in-radius radius with [sex = "male" and age >= 6] [
+;      if random-float 1.0 < (prob-dispersion * 2)
+;      [set AmI_dispersing? true]
+;      ]
+;     ]
+;   [
+;     ask monkeys in-radius radius with [sex = "male" and age >= 6] [
+;      if random-float 1.0 < prob-dispersion
+;      [set AmI_dispersing? true]
+;     ]
+;    ]
+;  ]
+end
+
+
+
+
+
+
 @#$#@#$#@
 GRAPHICS-WINDOW
-340
+443
 10
-1274
+1377
 965
 -1
 -1
@@ -102,10 +389,10 @@ ticks
 30.0
 
 BUTTON
-19
-24
-83
-57
+5
+10
+69
+43
 Setup
 setup
 NIL
@@ -119,10 +406,10 @@ NIL
 1
 
 BUTTON
-110
-24
-173
-60
+78
+10
+145
+43
 Go
 go
 T
@@ -136,25 +423,25 @@ NIL
 1
 
 SLIDER
-23
-85
-195
-118
+6
+53
+178
+86
 n-fragments
 n-fragments
-10
+100
 300
-243
+200
 1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-26
-140
-198
-173
+7
+93
+179
+126
 n-monkeys
 n-monkeys
 500
@@ -164,6 +451,116 @@ n-monkeys
 1
 NIL
 HORIZONTAL
+
+SLIDER
+8
+134
+180
+167
+prob-dispersion
+prob-dispersion
+0
+1
+0.18
+0.01
+1
+NIL
+HORIZONTAL
+
+CHOOSER
+8
+175
+146
+220
+pref-same-sp
+pref-same-sp
+"Yes" "No"
+0
+
+SLIDER
+7
+227
+179
+260
+prob-mate-diff-sp
+prob-mate-diff-sp
+0
+1
+0.54
+0.01
+1
+NIL
+HORIZONTAL
+
+PLOT
+9
+280
+209
+430
+Population
+Years
+Total Population
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"pen-1" 1.0 0 -8431303 true "" "plot count monkeys with [specie = 1]"
+"pen-2" 1.0 0 -955883 true "" "plot count monkeys with [(specie != 0) and (specie != 1)]"
+"pen-3" 1.0 0 -1184463 true "" "plot count monkeys with [specie = 0]"
+
+BUTTON
+153
+11
+218
+44
+Step
+go
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+MONITOR
+228
+282
+390
+327
+Fragments superpopulated
+count fragments with [population > maximum_density]
+17
+1
+11
+
+MONITOR
+229
+334
+337
+379
+MaxPop / Fragm.
+max [population] of fragments
+17
+1
+11
+
+MONITOR
+229
+386
+299
+431
+Total Pop.
+count monkeys
+17
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -524,6 +921,86 @@ NetLogo 5.0.5
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
+<experiments>
+  <experiment name="Population_dynamics" repetitions="5" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <metric>count monkeys with [specie = 0]</metric>
+    <metric>count monkeys with [specie = 1]</metric>
+    <metric>count monkeys with [(specie != 0) and (specie != 1)]</metric>
+    <metric>count fragments with [population &gt; maximum_density]</metric>
+    <metric>max [population] of fragments</metric>
+    <metric>count monkeys</metric>
+    <enumeratedValueSet variable="n-monkeys">
+      <value value="500"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-fragments">
+      <value value="200"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prob-dispersion">
+      <value value="0.18"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prob-mate-diff-sp">
+      <value value="0.54"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="pref-same-sp">
+      <value value="&quot;Yes&quot;"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="Population_dynamics2" repetitions="1" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <metric>count monkeys with [specie = 0]</metric>
+    <metric>count monkeys with [specie = 1]</metric>
+    <metric>count monkeys with [(specie != 0) and (specie != 1)]</metric>
+    <metric>count fragments with [population &gt; maximum_density]</metric>
+    <metric>max [population] of fragments</metric>
+    <metric>count monkeys</metric>
+    <enumeratedValueSet variable="n-monkeys">
+      <value value="500"/>
+      <value value="1000"/>
+      <value value="1500"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-fragments">
+      <value value="200"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prob-dispersion">
+      <value value="0.18"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prob-mate-diff-sp">
+      <value value="0.54"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="pref-same-sp">
+      <value value="&quot;Yes&quot;"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="Population_dynamics_HybridCheck" repetitions="3" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <metric>count monkeys with [specie = 0]</metric>
+    <metric>count monkeys with [specie = 1]</metric>
+    <metric>count monkeys with [(specie != 0) and (specie != 1)]</metric>
+    <metric>count fragments with [population &gt; maximum_density]</metric>
+    <metric>max [population] of fragments</metric>
+    <metric>count monkeys</metric>
+    <enumeratedValueSet variable="n-monkeys">
+      <value value="1500"/>
+      <value value="2000"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-fragments">
+      <value value="200"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prob-dispersion">
+      <value value="0.18"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prob-mate-diff-sp">
+      <value value="0.54"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="pref-same-sp">
+      <value value="&quot;Yes&quot;"/>
+    </enumeratedValueSet>
+  </experiment>
+</experiments>
 @#$#@#$#@
 @#$#@#$#@
 default
